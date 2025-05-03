@@ -1,0 +1,6 @@
+requests                 # For API calls
+python-dotenv            # For .env file support
+pandas                   # For data transformation
+psycopg2-binary          # PostgreSQL DB adapter
+sqlalchemy               # Optional, for DB abstraction
+tenacity                 # For retry logic (optional)
