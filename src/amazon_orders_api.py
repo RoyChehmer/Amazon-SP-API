@@ -412,6 +412,15 @@ class AmazonOrdersAPI:
                     'QuantityShipped': 'quantity_shipped',
                 }
             }
+
+            # --- AUTOMATED COLUMN MAPPING ---
+            #ToDo: remove the comments for automated column mapping
+            #def camel_to_snake(name):
+            #    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+            #    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+            # Convert all columns to snake_case
+            df.columns = [camel_to_snake(col) for col in df.columns]
             
             # Use the appropriate mapping for the current table
             column_mapping = column_mappings.get(table_name, {})
