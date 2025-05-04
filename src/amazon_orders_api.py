@@ -10,6 +10,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text, MetaData, Table, Column, String, Integer, Float, JSON, Boolean
 from sqlalchemy.dialects.postgresql import TIMESTAMP, JSONB
 import logging
+import re
 
 
 # Configure logging
@@ -306,12 +307,11 @@ class AmazonOrdersAPI:
         """
         if table_name:
             try:
-                # Handle different response structures
                 if 'payload' in data:
                     if 'Orders' in data['payload']:
-                        # Handle orders list
-                        for order in data['payload']['Orders']:
+                        for order in data['payload']['Orders'][:1]:
                             self._save_to_table('amazon_orders', order)
+                            break
                     elif 'OrderItems' in data['payload']:
                         # Handle order items
                         for item in data['payload']['OrderItems']:
@@ -338,18 +338,83 @@ class AmazonOrdersAPI:
         """
         try:
             # Convert data to DataFrame
+            # TODO: remove [:1] if you want to save all data
             df = pd.json_normalize(data)
             
-            # Rename columns to match database schema
-            column_mapping = {
-                'BuyerInfo.BuyerEmail': 'buyer_email',
-                'ShippingAddress.StateOrRegion': 'shipping_state',
-                'ShippingAddress.PostalCode': 'shipping_postal_code',
-                'ShippingAddress.City': 'shipping_city',
-                'ShippingAddress.CountryCode': 'shipping_country_code',
-                'OrderTotal.CurrencyCode': 'order_currency',
-                'OrderTotal.Amount': 'order_amount'
+            # Define column mappings
+            column_mappings = {
+                'amazon_orders': {
+                    'AmazonOrderId': 'amazon_order_id',
+                    'PurchaseDate': 'purchase_date',
+                    'LastUpdateDate': 'last_update_date',
+                    'OrderStatus': 'order_status',
+                    'FulfillmentChannel': 'fulfillment_channel',
+                    'SalesChannel': 'sales_channel',
+                    'OrderChannel': 'order_channel',
+                    'ShipServiceLevel': 'ship_service_level',
+                    'ShippingAddress': 'shipping_address',
+                    'OrderTotal': 'order_total',
+                    'NumberOfItemsShipped': 'number_of_items_shipped',
+                    'NumberOfItemsUnshipped': 'number_of_items_unshipped',
+                    'PaymentExecutionDetail': 'payment_execution_detail',
+                    'PaymentMethod': 'payment_method',
+                    'MarketplaceId': 'marketplace_id',
+                    'BuyerInfo': 'buyer_info',
+                    'BuyerInfo.BuyerEmail': 'buyer_email',
+                    'ShippingAddress.StateOrRegion': 'shipping_state',
+                    'ShippingAddress.PostalCode': 'shipping_postal_code',
+                    'ShippingAddress.City': 'shipping_city',
+                    'ShippingAddress.CountryCode': 'shipping_country_code',
+                    'OrderTotal.CurrencyCode': 'order_currency',
+                    'OrderTotal.Amount': 'order_amount',
+                    'AutomatedShippingSettings': 'automated_shipping_settings',
+                    'HasRegulatedItems': 'has_regulated_items',
+                    'EasyShipShipmentStatus': 'easy_ship_shipment_status',
+                    'CbaDisplayableShippingLabel': 'cba_displayable_shipping_label',
+                    'OrderType': 'order_type',
+                    'EarliestShipDate': 'earliest_ship_date',
+                    'LatestShipDate': 'latest_ship_date',
+                    'EarliestDeliveryDate': 'earliest_delivery_date',
+                    'LatestDeliveryDate': 'latest_delivery_date',
+                    'IsBusinessOrder': 'is_business_order',
+                    'IsPrime': 'is_prime',
+                    'IsPremiumOrder': 'is_premium_order',
+                    'IsGlobalExpressEnabled': 'is_global_express_enabled',
+                    'ReplacedOrderId': 'replaced_order_id',
+                    'IsReplacementOrder': 'is_replacement_order',
+                    'PromiseResponseDueDate': 'promise_response_due_date',
+                    'IsEstimatedShipDateSet': 'is_estimated_ship_date_set',
+                    'IsSoldByAB': 'is_sold_by_ab',
+                    'IsIBA': 'is_iba',
+                    'DefaultShipFromLocationAddress': 'default_ship_from_location_address',
+                    'BuyerInvoicePreference': 'buyer_invoice_preference',
+                    'IsAccessPointOrder': 'is_access_point_order',
+                    'SellerOrderId': 'seller_order_id',
+                    'SellerNote': 'seller_note',
+                    'PaymentMethodDetails': 'payment_method_details',
+                    'ShipmentServiceLevelCategory': 'shipment_service_level_category',
+                    'IsISPU': 'is_ispu',
+                },
+                'amazon_order_details': {
+                    'AmazonOrderId': 'amazon_order_id',
+                    'PurchaseDate': 'purchase_date',
+                    'LastUpdateDate': 'last_update_date',
+                    'OrderStatus': 'order_status',
+                },
+                'amazon_order_items': {
+                    'IsGift': 'is_gift',
+                    'IsTransparency': 'is_transparency',                    
+                    'ASIN': 'asin',
+                    'OrderItemId': 'order_item_id',
+                    'SellerSKU': 'seller_sku',
+                    'Title': 'title',
+                    'QuantityOrdered': 'quantity_ordered',
+                    'QuantityShipped': 'quantity_shipped',
+                }
             }
+            
+            # Use the appropriate mapping for the current table
+            column_mapping = column_mappings.get(table_name, {})
             df = df.rename(columns=column_mapping)
             
             # Add timestamps if they don't exist
@@ -357,7 +422,51 @@ class AmazonOrdersAPI:
                 df['created_at'] = datetime.now(timezone.utc)
             if 'updated_at' not in df.columns:
                 df['updated_at'] = datetime.now(timezone.utc)        
-            
+
+            # Output/log the insert statement and data
+            # logger.info(f"Preparing to insert into table '{table_name}':")
+            # logger.info(f"Columns: {list(df.columns)}")
+            # logger.info(f"Data: {df.to_dict(orient='records')}")
+
+            # Only keep columns that exist in the table
+            valid_columns_dict = {
+                'amazon_orders': [
+                    'amazon_order_id', 'purchase_date', 'last_update_date', 'order_status', 'fulfillment_channel',
+                    'sales_channel', 'order_channel', 'ship_service_level', 'shipping_address', 'order_total',
+                    'number_of_items_shipped', 'number_of_items_unshipped', 'payment_execution_detail', 'payment_method',
+                    'marketplace_id', 'buyer_info', 'buyer_email', 'shipping_state', 'shipping_postal_code', 'shipping_city',
+                    'shipping_country_code', 'order_currency', 'order_amount', 'automated_shipping_settings', 'has_regulated_items',
+                    'easy_ship_shipment_status', 'cba_displayable_shipping_label', 'order_type', 'earliest_ship_date',
+                    'latest_ship_date', 'earliest_delivery_date', 'latest_delivery_date', 'is_business_order', 'is_prime',
+                    'is_premium_order', 'is_global_express_enabled', 'replaced_order_id', 'is_replacement_order',
+                    'promise_response_due_date', 'is_estimated_ship_date_set', 'is_sold_by_ab', 'is_iba',
+                    'default_ship_from_location_address', 'buyer_invoice_preference', 'is_access_point_order', 'seller_order_id',
+                    'seller_note', 'created_at', 'updated_at'
+                ],
+                'amazon_order_details': [
+                    'amazon_order_id', 'purchase_date', 'last_update_date', 'order_status', 'fulfillment_channel',
+                    'sales_channel', 'order_channel', 'ship_service_level', 'shipping_address', 'order_total',
+                    'number_of_items_shipped', 'number_of_items_unshipped', 'payment_execution_detail', 'payment_method',
+                    'marketplace_id', 'buyer_info', 'automated_shipping_settings', 'has_regulated_items',
+                    'easy_ship_shipment_status', 'cba_displayable_shipping_label', 'order_type', 'earliest_ship_date',
+                    'latest_ship_date', 'earliest_delivery_date', 'latest_delivery_date', 'is_business_order', 'is_prime',
+                    'is_premium_order', 'is_global_express_enabled', 'replaced_order_id', 'is_replacement_order',
+                    'promise_response_due_date', 'is_estimated_ship_date_set', 'is_sold_by_ab', 'is_iba',
+                    'default_ship_from_location_address', 'buyer_invoice_preference', 'is_access_point_order',
+                    'seller_order_id', 'seller_note', 'created_at', 'updated_at'
+                ],
+                'amazon_order_items': [
+                    'id', 'amazon_order_id', 'asin', 'seller_sku', 'order_item_id', 'title', 'quantity_ordered',
+                    'quantity_shipped', 'product_info', 'points_granted', 'item_price', 'shipping_price', 'item_tax',
+                    'shipping_tax', 'shipping_discount', 'shipping_discount_tax', 'promotion_discount', 'promotion_discount_tax',
+                    'promotion_ids', 'cod_fee', 'cod_fee_discount', 'is_gift', 'condition_note', 'condition_id',
+                    'condition_subtype_id', 'scheduled_delivery_start_date', 'scheduled_delivery_end_date', 'price_designation',
+                    'tax_collection', 'serial_number_required', 'is_transparency', 'ioss_number', 'store_chain_store_id',
+                    'deemed_reseller_category', 'created_at', 'updated_at'
+                ],
+            }
+            df = df[[col for col in df.columns if col in valid_columns_dict[table_name]]]
+
             # Save to database
             df.to_sql(table_name, self.engine, if_exists='append', index=False, method='multi')
             logger.info(f"Data saved to {table_name}")
@@ -439,8 +548,9 @@ class AmazonOrdersAPI:
                 
                 # If we get here, the request was successful
                 data = response.json()
+                #logger.info(f"Request successful: {data}")
                 if table_name:
-                    self._save_to_table(table_name, data)
+                    self._save_response(data, table_name)
                 return data
                 
             except RequestException as e:
@@ -487,7 +597,7 @@ class AmazonOrdersAPI:
             page_count += 1
             
             # Check for nextToken in the response
-            next_token = response.get('payload', {}).get('NextToken')
+            next_token = response.get('payload', {}).get('NextToken')            
             if not next_token:
                 break
                 
@@ -566,6 +676,10 @@ class AmazonOrdersAPI:
         else:
             return self._make_request(f'/orders/v0/orders/{order_id}/orderItems', params, table_name)
 
+def camel_to_snake(name):
+    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
 # Example usage
 if __name__ == "__main__":
     client_id = os.getenv("AMAZON_OAUTH_CLIENT_ID")
@@ -603,10 +717,10 @@ if __name__ == "__main__":
         )
         
         # Process all orders
-        # for page_num, orders_page in enumerate(all_orders, 1):
-        for page_num, orders_page in enumerate(all_orders[:10], 1):
+        # for page_num, orders_page in enumerate(all_orders, 1):        
+        for page_num, orders_page in enumerate(all_orders, 1):
             logger.info(f"\nProcessing page {page_num}")
-            if orders_page.get('payload', {}).get('Orders'):
+            if orders_page.get('payload', {}).get('Orders'):                
                 for order in orders_page['payload']['Orders']:
                     order_id = order['AmazonOrderId']
                     
@@ -619,8 +733,7 @@ if __name__ == "__main__":
                     # Get order items with pagination
                     order_items = api.get_order_items(
                         order_id,
-                        get_all_pages=True,  # Enable pagination
-                        save_response=True,
+                        get_all_pages=True,  # Enable pagination                        
                         table_name='amazon_order_items'
                     )
                     
