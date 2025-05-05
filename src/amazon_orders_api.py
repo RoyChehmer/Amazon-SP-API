@@ -11,7 +11,9 @@ from sqlalchemy import create_engine, text, MetaData, Table, Column, String, Int
 from sqlalchemy.dialects.postgresql import TIMESTAMP, JSONB
 import logging
 import re
+from dotenv import load_dotenv
 
+load_dotenv()  # by default, loads from .env in current dir
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -694,6 +696,10 @@ if __name__ == "__main__":
     client_id = os.getenv("AMAZON_OAUTH_CLIENT_ID")
     client_secret = os.getenv("AMAZON_OAUTH_CLIENT_SECRET")
     refresh_token = os.getenv("AMAZON_OAUTH_REFRESH_TOKEN")
+
+    logger.info(f"Client ID: {client_id}")
+    logger.info(f"Client Secret: {client_secret}")
+    logger.info(f"Refresh Token: {refresh_token}")
     
     # Initialize the API client with custom output directory and retry settings
     api = AmazonOrdersAPI(
@@ -703,11 +709,11 @@ if __name__ == "__main__":
         max_retries=5,  # Maximum number of retry attempts
         max_wait_time=32,  # Maximum wait time in seconds
         db_config={
-            'host': 'localhost',
-            'port': '5432',
-            'database': 'amazon',
-            'user': 'user',
-            'password': 'password'
+            'host': os.getenv("DB_HOST"),
+            'port': os.getenv("DB_PORT"),
+            'database': os.getenv("DB_SCHEMA"),
+            'user': os.getenv("DB_USER"),
+            'password': os.getenv("DB_PASSWORD")
         }
     )
     
